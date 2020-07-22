@@ -1,4 +1,9 @@
 package hxd;
+#if kha
+
+typedef System = SystemKha;
+
+#else
 
 enum Platform {
 	IOS;
@@ -149,3 +154,4 @@ class System {
 	}
 
 }
+#end

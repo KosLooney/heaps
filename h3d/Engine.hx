@@ -68,6 +68,8 @@ class Engine {
 		window.addResizeEvent(onWindowResize);
 		#if macro
 		driver = new h3d.impl.NullDriver();
+		#elseif kha
+		driver = new h3d.impl.KhaDriver(antiAlias);
 		#elseif (js || hlsdl || usegl)
 		driver = new h3d.impl.GlDriver(antiAlias);
 		#elseif flash

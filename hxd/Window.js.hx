@@ -1,4 +1,7 @@
 package hxd;
+#if kha
+typedef Window = WindowKha;
+#else
 
 enum DisplayMode {
 	Windowed;
@@ -375,3 +378,4 @@ class Window {
 		return js.Browser.document.title = t;
 	}
 }
+#end
