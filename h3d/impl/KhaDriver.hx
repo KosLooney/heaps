@@ -174,6 +174,7 @@ private class Program {
 			default:
 			}  
 			
+		trace(structure);
 		this.structures = [structure];
 		
 		vertexShaderData = shader.vertex;
@@ -307,7 +308,6 @@ class KhaDriver extends h3d.impl.Driver {
 	public static var outOfMemoryCheck = #if js false #else true #end;
 
 	public function new(antiAlias: Int) {
-		trace('KhaDriver');
 		var v : String = SystemImpl.gl.getParameter(GL.VERSION);
 		var reg = ~/ES ([0-9]+\.[0-9]+)/;
 		if( reg.match(v) )
@@ -321,7 +321,6 @@ class KhaDriver extends h3d.impl.Driver {
 			#end
 			shaderVersion = Math.round( Std.parseFloat(reg.matched(0)) * 100 );
 		}
-
 		drawMode = GL.TRIANGLES;
 	}
 
@@ -412,8 +411,7 @@ class KhaDriver extends h3d.impl.Driver {
 	}
 
 	override public function clear( ?color : h3d.Vector, ?depth : Float, ?stencil : Int ) {
-		//g.clear(color != null ? kha.Color.fromFloats(color.r, color.g, color.b, color.a) : null, depth, stencil);
-		g.clear(kha.Color.fromFloats(1,1, 1, 1));
+		g.clear(color != null ? kha.Color.fromFloats(color.r, color.g, color.b, color.a) : null, depth, stencil);
 	}
 
 	override public function captureRenderBuffer( pixels : hxd.Pixels ) {
@@ -520,11 +518,11 @@ class KhaDriver extends h3d.impl.Driver {
 	var curMaterial: Material;
 
 	override public function selectMaterial( pass : h3d.mat.Pass ) {
-		if (materials.exists(@:privateAccess pass.passId)) {
-			curMaterial = materials.get(@:privateAccess pass.passId);
-			return;
-		}
-
+	
+		//if (materials.exists(@:privateAccess pass.passId)) {
+		//	curMaterial = materials.get(@:privateAccess pass.passId);
+		//	return;
+		//}
 		
 		var material = new Material(@:privateAccess pass.passId);
 		var bits = @:privateAccess pass.bits;
@@ -537,6 +535,7 @@ class KhaDriver extends h3d.impl.Driver {
 			}
 		}
 		if( bits & (Pass.blendSrc_mask | Pass.blendDst_mask | Pass.blendAlphaSrc_mask | Pass.blendAlphaDst_mask) != 0 ) {
+
 			var csrc = Pass.getBlendSrc(bits);
 			var cdst = Pass.getBlendDst(bits);
 			var asrc = Pass.getBlendAlphaSrc(bits);
@@ -558,6 +557,7 @@ class KhaDriver extends h3d.impl.Driver {
 			var cmp = Pass.getDepthTest(bits);
 			material.depthMode = COMPARE[cmp];
 		}
+		
 		/*
 		if( bits & Pass.colorMask_mask != 0 ) {
 			var m = Pass.getColorMask(bits);
@@ -608,10 +608,9 @@ class KhaDriver extends h3d.impl.Driver {
 				material.stencilWriteMask = Stencil.getBackWriteMask(brBits);
 
 			*/
-		}
-		
+		}		
 
-		materials.set(material.id, material);
+		//materials.set(material.id, material);
 		curMaterial = material;
 	}
 
@@ -660,23 +659,28 @@ class KhaDriver extends h3d.impl.Driver {
 		var wrapper = @:privateAccess buffer.buffer.vbuf;
 		if( wrapper.vertexBuffer == null ) {
 
-			//trace(curProgram.structures[0]);
-			//trace(wrapper.count);
-
 			wrapper.vertexBuffer = new kha.graphics4.VertexBuffer(wrapper.count, curProgram.structures[0], wrapper.usage, false);
 			var vertices = wrapper.vertexBuffer.lock();
 			for( i in 0...wrapper.data.length ) {
 				vertices.set(i, wrapper.data[i]);
 			}
-			//trace(vertices.length);
 			wrapper.vertexBuffer.unlock();
-			//trace(wrapper.vertexBuffer);
+			
 		}
 		g.setVertexBuffers([wrapper.vertexBuffer]);
 	}
 
 	override public function selectMultiBuffers( buffers : Buffer.BufferOffset ) {
-		throw "selectMultiBuffers";
+		var wrapper = @:privateAccess buffers.buffer.buffer.vbuf;
+		if( wrapper.vertexBuffer == null ) {
+			wrapper.vertexBuffer = new kha.graphics4.VertexBuffer(wrapper.count, curProgram.structures[0], wrapper.usage, false);
+			var vertices = wrapper.vertexBuffer.lock();
+			for( i in 0...wrapper.data.length ) {
+				vertices.set(i, wrapper.data[i]);
+			}		
+			wrapper.vertexBuffer.unlock();
+		}
+		g.setVertexBuffers([wrapper.vertexBuffer]);
 	}
 
 	var pipelines = new Map<{material: Int, program: Int}, Pipeline>();
@@ -811,6 +815,7 @@ class KhaDriver extends h3d.impl.Driver {
 	}
 
 	override public function allocDepthBuffer( b : h3d.mat.DepthBuffer ) : DepthBuffer {
+		trace("allocDepthBuffer");
 		return null;
 	}
 
