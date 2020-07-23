@@ -1,4 +1,5 @@
 package h3d.impl;
+import kha.graphics4.StencilValue;
 import h3d.impl.Driver;
 import h3d.mat.Pass;
 import h3d.mat.Stencil;
@@ -74,7 +75,7 @@ private class Pipeline {
 		pipeline.stencilBothPass = material.stencilBothPass;
 		pipeline.stencilDepthFail = material.stencilDepthFail;
 		pipeline.stencilFail = material.stencilFail;
-		//pipeline.stencilReferenceValue = material.stencilReferenceValue;
+		pipeline.stencilReferenceValue = material.stencilReferenceValue;
 		pipeline.stencilReadMask = material.stencilReadMask;
 		pipeline.stencilWriteMask = material.stencilWriteMask;
 		pipeline.blendSource = material.blendSource;
@@ -130,6 +131,7 @@ private class Program {
 		
 		inputs = InputNames.get(inputVars);
 		trace(inputs);
+		
 		
 		/*
 		var structure = new VertexStructure();
@@ -199,7 +201,7 @@ private class Material {
 		stencilBothPass = StencilAction.Keep;
 		stencilDepthFail = StencilAction.Keep;
 		stencilFail = StencilAction.Keep;
-		stencilReferenceValue = 0;
+		stencilReferenceValue = kha.graphics4.StencilValue.Static(0);
 		stencilReadMask = 0xff;
 		stencilWriteMask = 0xff;
 
@@ -231,7 +233,7 @@ private class Material {
 	public var stencilBothPass:StencilAction;
 	public var stencilDepthFail:StencilAction;
 	public var stencilFail:StencilAction;
-	public var stencilReferenceValue:Int;
+	public var stencilReferenceValue:StencilValue;
 	public var stencilReadMask:Int;
 	public var stencilWriteMask:Int;
 
@@ -926,25 +928,23 @@ class KhaDriver extends h3d.impl.Driver {
 	}
 
 	override public function uploadTextureBitmap( t : h3d.mat.Texture, bmp : hxd.BitmapData, mipLevel : Int, side : Int ) {
+		var pixels = bmp.getPixels();
 		uploadTexturePixels(t, bmp.getPixels(), mipLevel, side);
+		pixels.dispose();
 	}
 
 	override public function uploadTexturePixels( t : h3d.mat.Texture, pixels : hxd.Pixels, mipLevel : Int, side : Int ) {
 
 		pixels.convert(t.format);
-		pixels.setFlip(true);
+		pixels.setFlip(false);
 
-		var data = t.t.lock(mipLevel);		
-		for( y in 0...t.height ) {
-			for( x in 0...t.width ) {
-				data.set(y * t.width * 4 + x * 4 + 0, pixels.bytes.get((t.height - y) * t.width * 4 + x * 4 + 0));
-				data.set(y * t.width * 4 + x * 4 + 1, pixels.bytes.get((t.height - y) * t.width * 4 + x * 4 + 1));
-				data.set(y * t.width * 4 + x * 4 + 2, pixels.bytes.get((t.height - y) * t.width * 4 + x * 4 + 2));
-				data.set(y * t.width * 4 + x * 4 + 3, pixels.bytes.get((t.height - y) * t.width * 4 + x * 4 + 3));
-			}
-		}
+		var data = t.t.lock(mipLevel);	
 		
-		t.t.unlock();
+		for( i in 0...pixels.bytes.length ) {			
+			data.set(i, pixels.bytes.get(i));
+		}
+
+		t.t.unlock();		
 	}
 
 	override public function readVertexBytes( v : VertexBuffer, startVertex : Int, vertexCount : Int, buf : haxe.io.Bytes, bufPos : Int ) {
