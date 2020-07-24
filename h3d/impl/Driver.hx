@@ -10,7 +10,7 @@ typedef Query = {};
 typedef IndexBuffer = kha.graphics4.IndexBuffer;
 typedef VertexBuffer = KhaDriver.VertexWrapper;
 typedef Texture = kha.Image;
-typedef DepthBuffer = { r : js.html.webgl.Renderbuffer #if multidriver, driver : Driver #end };
+typedef DepthBuffer = { r : kha.WebGLImage #if multidriver, driver : Driver #end };
 typedef Query = {};
 #elseif flash
 typedef IndexBuffer = flash.display3D.IndexBuffer3D;

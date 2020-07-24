@@ -1,6 +1,10 @@
 package h3d.mat;
 import h3d.mat.Data;
 
+class PassUuid{
+	public static var uuid = 0;
+}
+
 @:allow(h3d.mat.BaseMaterial)
 #if !macro
 @:build(hxd.impl.BitsBuilder.build())
@@ -10,6 +14,7 @@ class Pass implements hxd.impl.Serializable {
 	@:s public var name(default, null) : String;
 	var flags : Int;
 	var passId : Int;
+	public var uuid : Int;
 	@:s var bits : Int = 0;
 	@:s var parentPass : Pass;
 	var parentShaders : hxsl.ShaderList;
@@ -50,6 +55,8 @@ class Pass implements hxd.impl.Serializable {
 	@:bits(bits) @:noCompletion var reserved : Bool;
 
 	public function new(name, ?shaders, ?parent) {
+
+		this.uuid = PassUuid.uuid++;
 		this.parentPass = parent;
 		this.shaders = shaders;
 		setPassName(name);

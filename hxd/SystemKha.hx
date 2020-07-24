@@ -79,7 +79,6 @@ class SystemKha {
 		};
 
 		kha.System.start(options, function(_) {
-			trace('kha system start');
 			kha.System.notifyOnFrames(function (frames:Array<kha.Framebuffer>) {
 				h3d.impl.KhaDriver.framebuffer = frames[0];
 				h3d.impl.KhaDriver.g = frames[0].g4;
@@ -88,8 +87,6 @@ class SystemKha {
 				}
 				h3d.impl.KhaDriver.g = null;
 			});
-
-			trace('kha system callb');
 			callb();
 		});
 	}

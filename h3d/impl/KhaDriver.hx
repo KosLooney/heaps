@@ -13,6 +13,7 @@ import kha.graphics4.BlendingOperation;
 import kha.graphics4.CompareMode;
 import kha.graphics4.ConstantLocation;
 import kha.graphics4.CullMode;
+import kha.graphics4.DepthStencilFormat;
 import kha.graphics4.FragmentShader;
 import kha.graphics4.IndexBuffer;
 import kha.graphics4.PipelineState;
@@ -28,13 +29,16 @@ class VertexWrapper {
 	public var stride:Int;
 	public var data:haxe.ds.Vector<kha.FastFloat>;
 	public var usage:Usage;
-	public var vertexBuffer:kha.graphics4.VertexBuffer;
-	
+	public var vertexBuffers:Array<kha.graphics4.VertexBuffer>;
+	public var mappedVertexBuffers:Map<Int, Int>;
+
 	public function new(count:Int, stride:Int, usage:Usage) {
 		this.count = count;
 		this.stride = stride;
 		data = new haxe.ds.Vector<kha.FastFloat>(count * stride);
 		this.usage = usage;
+		vertexBuffers = [];
+		mappedVertexBuffers = new Map<Int, Int>();
 	}
 }
 
@@ -59,11 +63,11 @@ private class ShaderParameters {
 private class Pipeline {
 	public var pipeline:PipelineState;
 	public var vertexParameters:ShaderParameters;
-	public var fragmentParameters:ShaderParameters;
+	public var fragmentParameters:ShaderParameters;	
 
 	public function new(program:Program, material:Material) {
-		pipeline = new PipelineState();
-		
+		pipeline = new PipelineState();		
+
 		pipeline.vertexShader = program.vertexShader;
 		pipeline.fragmentShader = program.fragmentShader;
 		pipeline.inputLayout = program.structures;
@@ -98,6 +102,17 @@ private class Pipeline {
 
 private typedef ShaderCompiler = hxsl.GlslOut;
 
+private class CompiledAttribute {
+	public var index : Int;
+	public var type : Int;
+	public var size : Int;
+	public var offset : Int;
+	public var divisor : Int;
+	public var name : String;
+	public function new() {
+	}
+}
+
 private class Program {
 	public var id:Int;
 	public var vertexShader:VertexShader;
@@ -106,9 +121,11 @@ private class Program {
 	public var vertexShaderData:hxsl.RuntimeShader.RuntimeShaderData;
 	public var fragmentShaderData:hxsl.RuntimeShader.RuntimeShaderData;
 	public var inputs : InputNames;
+	public var attribs : Array<CompiledAttribute>;	
 
 	public function new(shader:hxsl.RuntimeShader, glES, shaderVersion) {
 		this.id = shader.id;
+		attribs = [];
 
 		var glout = new ShaderCompiler();
 		glout.glES = glES;
@@ -119,7 +136,7 @@ private class Program {
 
 		//trace("Vertex shader:\n" + glout.run(shader.vertex.data));
 		//trace("Fragment shader:\n" + glout.run(shader.fragment.data));
-
+		
 		var inputVars = [];
 		for( v in shader.vertex.data.vars ){
 			switch( v.kind ) {
@@ -127,38 +144,23 @@ private class Program {
 				inputVars.push(v.name);	
 			default:
 			}     
-		}	
-		
+		}		
 		inputs = InputNames.get(inputVars);
-		trace(inputs);
-		
-		
-		/*
+
 		var structure = new VertexStructure();
-		for( i in 0...inputs.names.length ) {
-			switch( inputs.names[i] ) {
-				case "position":
-					structure.add("position", kha.graphics4.VertexData.Float3);				
-				case "normal":
-					structure.add("normal", kha.graphics4.VertexData.Float3);						
-				case "uv":
-					structure.add("uv", kha.graphics4.VertexData.Float2);					
-				case "tangent":
-					structure.add("tangent", kha.graphics4.VertexData.Float3);					
-				case "weights":
-					structure.add("weights", kha.graphics4.VertexData.Float3);	
-				case "color":
-					structure.add("color", kha.graphics4.VertexData.Float4);	
-				case "indexes":
-					structure.add("indexes", kha.graphics4.VertexData.Float4);					
-			}
-		}   
-		*/
-		
-		var structure = new VertexStructure();
+		//var stride = 0;
 		for( v in shader.vertex.data.vars )
 			switch( v.kind ) {
 			case Input:
+
+				var t = GL.FLOAT;
+				var size = switch( v.type ) {
+				case TVec(n, _): n;
+				case TBytes(n): t = GL.BYTE; n;
+				case TFloat: 1;
+				default: throw "assert " + v.type;
+				}
+
 				var data: VertexData;
 				switch( v.type ) {
 				case TVec(n, _):
@@ -172,11 +174,35 @@ private class Program {
 				case TFloat: data = VertexData.Float1;
 				default: throw "assert " + v.type;
 				}
+
+			//	var index = SystemImpl.gl.getAttribLocation(p.p, glout.varNames.exists(v.id) ? glout.varNames.get(v.id) : v.name);
+			//	if( index < 0 ) {
+			//		trace(glout.varNames.get(v.id) + "-----" + v.name);
+			//		stride += size;
+			//		continue;
+			//	}
+
+				var a = new CompiledAttribute();
+					a.type = t;
+					a.size = size;
+					//a.index = index;
+					//a.offset = p.stride;
+					a.divisor = 0;
+					a.name = v.name;
+					if( v.qualifiers != null ) {
+						for( q in v.qualifiers )
+							switch( q ) {
+							case PerInstance(n): a.divisor = n;
+							default:
+							}
+					}
+					attribs.push(a);
+					
 				structure.add(v.name, data);
 			default:
 			}  
 			
-		trace(structure);
+		//trace(structure);
 		this.structures = [structure];
 		
 		vertexShaderData = shader.vertex;
@@ -185,9 +211,9 @@ private class Program {
 }
 
 private class Material {
-	public function new(id:Int) {
+	public function new(id:Int, name:String) {
 		this.id = id;
-
+		this.name = name;
 		inputLayout = null;
 		vertexShader = null;
 		fragmentShader = null;
@@ -219,6 +245,7 @@ private class Material {
 	}
 
 	public var id:Int;
+	public var name:String;
 
 	public var inputLayout:Array<VertexStructure>;
 	public var vertexShader:VertexShader;
@@ -250,47 +277,7 @@ private class Material {
 	public var colorWriteMaskAlpha:Bool;
 }
 
-
 private typedef GL = js.html.webgl.GL;
-private extern class GL2 extends js.html.webgl.GL {
-	// webgl2
-	function drawBuffers( buffers : Array<Int> ) : Void;
-	function vertexAttribDivisor( index : Int, divisor : Int ) : Void;
-	function drawElementsInstanced( mode : Int, count : Int, type : Int, offset : Int, instanceCount : Int) : Void;
-	function getUniformBlockIndex( p : Program, name : String ) : Int;
-	function bindBufferBase( target : Int, index : Int, buffer : js.html.webgl.Buffer ) : Void;
-	function uniformBlockBinding( p : Program, blockIndex : Int, blockBinding : Int ) : Void;
-	function framebufferTextureLayer( target : Int, attach : Int, t : js.html.webgl.Texture, level : Int, layer : Int ) : Void;
-	function texImage3D(target : Int, level : Int, internalformat : Int, width : Int, height : Int, depth : Int, border : Int, format : Int, type : Int, source : Dynamic) : Void;
-	static inline var RGBA16F = 0x881A;
-	static inline var RGBA32F = 0x8814;
-	static inline var RED      = 0x1903;
-	static inline var RG       = 0x8227;
-	static inline var RGBA8	   = 0x8058;
-	static inline var BGRA 		 = 0x80E1;
-	static inline var HALF_FLOAT = 0x140B;
-	static inline var SRGB       = 0x8C40;
-	static inline var SRGB8      = 0x8C41;
-	static inline var SRGB_ALPHA = 0x8C42;
-	static inline var SRGB8_ALPHA = 0x8C43;
-	static inline var R8 		  = 0x8229;
-	static inline var RG8 		  = 0x822B;
-	static inline var R16F 		  = 0x822D;
-	static inline var R32F 		  = 0x822E;
-	static inline var RG16F 	  = 0x822F;
-	static inline var RG32F 	  = 0x8230;
-	static inline var RGB16F 	  = 0x881B;
-	static inline var RGB32F 	  = 0x8815;
-	static inline var R11F_G11F_B10F = 0x8C3A;
-	static inline var RGB10_A2     = 0x8059;
-	static inline var DEPTH_COMPONENT24 = 0x81A6;
-	static inline var UNIFORM_BUFFER = 0x8A11;
-	static inline var TEXTURE_2D_ARRAY = 0x8C1A;
-	static inline var UNSIGNED_INT_2_10_10_10_REV = 0x8368;
-	static inline var UNSIGNED_INT_10F_11F_11F_REV = 0x8C3B;
-	static inline var FUNC_MIN = 0x8007;
-	static inline var FUNC_MAX = 0x8008;
-}
 
 class KhaDriver extends h3d.impl.Driver {
 
@@ -299,14 +286,35 @@ class KhaDriver extends h3d.impl.Driver {
 	public static var framebuffer: kha.Framebuffer;
 	public static var g: kha.graphics4.Graphics;
 	var programs = new Map<Int, Program>();
-	var curProgram: Program = null;
-	var glES : Null<Float>;
-	var shaderVersion : Null<Int>;
-	var drawMode : Int;
+			
 	var maxCompressedTexturesSupport = 0;
-	var bufferWidth : Int;
+
 	var bufferHeight : Int;
+	var bufferWidth : Int;	
+
+	var curProgram: Program = null;
+	var curBuffer : h3d.Buffer;
+	var debug : Bool;
+	var drawMode : Int;
+
+	var glES : Null<Float>;
+
+	var shaderVersion : Null<Int>;
+
 	
+	var pipelines = new Map<String, Pipeline>();
+	var curPipeline: Pipeline;
+	var lastVertexGlobals:h3d.shader.Buffers.ShaderBufferData;
+	var lastVertexParams:h3d.shader.Buffers.ShaderBufferData;
+	var lastVertexTextures:haxe.ds.Vector<h3d.mat.Texture>;
+	var lastVertexBuffers:haxe.ds.Vector<Buffer>;
+
+	var lastFragmentGlobals:h3d.shader.Buffers.ShaderBufferData;
+	var lastFragmentParams:h3d.shader.Buffers.ShaderBufferData;
+	var lastFragmentTextures:haxe.ds.Vector<h3d.mat.Texture>;
+	var lastFragmentBuffers:haxe.ds.Vector<Buffer>;
+
+
 	public static var outOfMemoryCheck = #if js false #else true #end;
 
 	public function new(antiAlias: Int) {
@@ -401,6 +409,9 @@ class KhaDriver extends h3d.impl.Driver {
 	
 	override public function begin( frame : Int ) {
 		curPipeline = null;
+		curProgram = null;
+		curBuffer = null;
+
 		g.begin();
 	}
 
@@ -459,74 +470,26 @@ class KhaDriver extends h3d.impl.Driver {
 			program = new Program(shader, glES, shaderVersion);
 			programs.set(shader.id, program);
 		}
+		if( curProgram == program ) return false;
+
 		curProgram = program;
+		curBuffer = null;
 		return true;
 	}
-
-	static var CULLFACES = [
-		kha.graphics4.CullMode.None,
-		kha.graphics4.CullMode.CounterClockwise,
-		kha.graphics4.CullMode.Clockwise,
-		kha.graphics4.CullMode.None,
-	];
-
-	static var BLEND = [
-		kha.graphics4.BlendingFactor.BlendOne,
-		kha.graphics4.BlendingFactor.BlendZero,
-		kha.graphics4.BlendingFactor.SourceAlpha,
-		kha.graphics4.BlendingFactor.SourceColor,
-		kha.graphics4.BlendingFactor.DestinationAlpha,
-		kha.graphics4.BlendingFactor.DestinationColor,
-		kha.graphics4.BlendingFactor.InverseSourceAlpha,
-		kha.graphics4.BlendingFactor.InverseSourceColor,
-		kha.graphics4.BlendingFactor.InverseDestinationAlpha,
-		kha.graphics4.BlendingFactor.InverseDestinationColor,
-		kha.graphics4.BlendingFactor.Undefined, // CONSTANT_COLOR
-		kha.graphics4.BlendingFactor.Undefined, // CONSTANT_ALPHA
-		kha.graphics4.BlendingFactor.Undefined, // ONE_MINUS_CONSTANT_COLOR
-		kha.graphics4.BlendingFactor.Undefined, // ONE_MINUS_CONSTANT_ALPHA
-		kha.graphics4.BlendingFactor.Undefined, // SRC_ALPHA_SATURATE
-	];
-
-	static var OP = [
-		kha.graphics4.BlendingOperation.Add,
-		kha.graphics4.BlendingOperation.Subtract,
-		kha.graphics4.BlendingOperation.ReverseSubtract,
-	];
-
-	static var COMPARE = [
-		kha.graphics4.CompareMode.Always,
-		kha.graphics4.CompareMode.Never,
-		kha.graphics4.CompareMode.Equal,
-		kha.graphics4.CompareMode.NotEqual,
-		kha.graphics4.CompareMode.Greater,
-		kha.graphics4.CompareMode.GreaterEqual,
-		kha.graphics4.CompareMode.Less,
-		kha.graphics4.CompareMode.LessEqual,
-	];
-
-	static var STENCIL_OP = [
-		kha.graphics4.StencilAction.Keep,
-		kha.graphics4.StencilAction.Zero,
-		kha.graphics4.StencilAction.Replace,
-		kha.graphics4.StencilAction.Increment,
-		kha.graphics4.StencilAction.IncrementWrap,
-		kha.graphics4.StencilAction.Decrement,
-		kha.graphics4.StencilAction.DecrementWrap,
-		kha.graphics4.StencilAction.Invert,
-	];
 
 	var materials = new Map<Int, Material>();
 	var curMaterial: Material;
 
 	override public function selectMaterial( pass : h3d.mat.Pass ) {
 	
-		//if (materials.exists(@:privateAccess pass.passId)) {
-		//	curMaterial = materials.get(@:privateAccess pass.passId);
-		//	return;
-		//}
+		if(pass.name != ""){
+			if (materials.exists(@:privateAccess pass.uuid)) {
+				curMaterial = materials.get(@:privateAccess pass.uuid);
+				return;
+			}
+		}		
 		
-		var material = new Material(@:privateAccess pass.passId);
+		var material = new Material(@:privateAccess pass.uuid, pass.name);
 		var bits = @:privateAccess pass.bits;
 		if( bits & Pass.culling_mask != 0 ) {
 			var cull = Pass.getCulling(bits);
@@ -612,7 +575,9 @@ class KhaDriver extends h3d.impl.Driver {
 			*/
 		}		
 
-		//materials.set(material.id, material);
+		if(pass.name != ""){
+			materials.set(material.id, material);
+		}
 		curMaterial = material;
 	}
 
@@ -631,68 +596,79 @@ class KhaDriver extends h3d.impl.Driver {
 				lastVertexTextures = buffers.vertex.tex;
 				lastFragmentTextures = buffers.fragment.tex;
 			}
-	}
-
-	static var TFILTERS = [
-		kha.graphics4.TextureFilter.PointFilter,
-		kha.graphics4.TextureFilter.LinearFilter,
-	];
-
-	static var TMIPS = [
-		kha.graphics4.MipMapFilter.NoMipFilter,
-		kha.graphics4.MipMapFilter.PointMipFilter,
-		kha.graphics4.MipMapFilter.LinearMipFilter,
-	];
-
-	static var TWRAP = [
-		kha.graphics4.TextureAddressing.Clamp,
-		kha.graphics4.TextureAddressing.Repeat,
-	];
+	}	
 
 	override public function getShaderInputNames() : InputNames {
 		return curProgram.inputs;
 	}
 
-	override public function selectBuffer( buffer : Buffer ) {
-		if( !buffer.flags.has(RawFormat) ) {
-			throw "!RawFormat";
+	override public function selectBuffer( v :Buffer ) {
+
+		if( v == curBuffer ){
+			var wrapper = @:privateAccess v.buffer.vbuf;
+			g.setVertexBuffers(wrapper.vertexBuffers);
+			return;
+		}			
+
+		if( curBuffer != null && v.buffer == curBuffer.buffer && v.buffer.flags.has(RawFormat) == curBuffer.flags.has(RawFormat) ) {
+			curBuffer = v;
+			return;
 		}
 
-		var wrapper = @:privateAccess buffer.buffer.vbuf;
-		if( wrapper.vertexBuffer == null ) {
+		if( curProgram == null )
+			throw "No shader selected";
 
-			wrapper.vertexBuffer = new kha.graphics4.VertexBuffer(wrapper.count, curProgram.structures[0], wrapper.usage, false);
-			var vertices = wrapper.vertexBuffer.lock();
+		curBuffer = v;
+
+		var wrapper = @:privateAccess v.buffer.vbuf;		
+		if( wrapper.vertexBuffers.length == 0) {
+			var vertexBuffer = new kha.graphics4.VertexBuffer(wrapper.count, curProgram.structures[0], wrapper.usage, false);
+			var vertices = vertexBuffer.lock();
 			for( i in 0...wrapper.data.length ) {
 				vertices.set(i, wrapper.data[i]);
 			}
-			wrapper.vertexBuffer.unlock();
-			
-		}
-		g.setVertexBuffers([wrapper.vertexBuffer]);
+			vertexBuffer.unlock();
+			wrapper.vertexBuffers.push(vertexBuffer);
+		}		
+		g.setVertexBuffers(wrapper.vertexBuffers);
 	}
 
 	override public function selectMultiBuffers( buffers : Buffer.BufferOffset ) {
+
+		/*
+		var curBufferId = buffers.buffer.id;
+		while( buffers != null ) {			
+			if(curBufferId != buffers.buffer.id){
+				trace('Switch buffer');
+			}			
+			buffers = buffers.next;
+		}
+		*/
+				
 		var wrapper = @:privateAccess buffers.buffer.buffer.vbuf;
-		if( wrapper.vertexBuffer == null ) {
-			wrapper.vertexBuffer = new kha.graphics4.VertexBuffer(wrapper.count, curProgram.structures[0], wrapper.usage, false);
-			var vertices = wrapper.vertexBuffer.lock();
+		if(!wrapper.mappedVertexBuffers.exists(curProgram.id)) {	
+			wrapper.mappedVertexBuffers.set(curProgram.id, wrapper.vertexBuffers.length);
+			var vertexBuffer = new kha.graphics4.VertexBuffer(wrapper.count, curProgram.structures[0], wrapper.usage, false);	
+			var vertices = vertexBuffer.lock();
 			for( i in 0...wrapper.data.length ) {
 				vertices.set(i, wrapper.data[i]);
-			}		
-			wrapper.vertexBuffer.unlock();
+			}
+			vertexBuffer.unlock();
+			wrapper.vertexBuffers.push(vertexBuffer);
 		}
-		g.setVertexBuffers([wrapper.vertexBuffer]);
-	}
-
-	var pipelines = new Map<{material: Int, program: Int}, Pipeline>();
-	var curPipeline: Pipeline;
+		var vertexBuffer = wrapper.vertexBuffers[wrapper.vertexBuffers.length-1];
+		g.setVertexBuffers([vertexBuffer]);
+	}	
 
 	function selectPipeline() {
-		var pipeline = pipelines.get({material: curMaterial.id, program: curProgram.id});
+		var key = curMaterial.id+"_"+curProgram.id;
+		var pipeline = pipelines.get(key);
 		if( pipeline == null ) {
+			
 			pipeline = new Pipeline(curProgram, curMaterial);
-			pipelines.set({material: curMaterial.id, program: curProgram.id}, pipeline);
+			pipelines.set(key, pipeline);
+
+			
 		}
 		if( pipeline != curPipeline ) {
 			g.setPipeline(pipeline.pipeline);
@@ -700,19 +676,40 @@ class KhaDriver extends h3d.impl.Driver {
 		}
 	}
 
-	var lastVertexGlobals:h3d.shader.Buffers.ShaderBufferData;
-	var lastVertexParams:h3d.shader.Buffers.ShaderBufferData;
-	var lastVertexTextures:haxe.ds.Vector<h3d.mat.Texture>;
-	var lastVertexBuffers:haxe.ds.Vector<Buffer>;
-
-	var lastFragmentGlobals:h3d.shader.Buffers.ShaderBufferData;
-	var lastFragmentParams:h3d.shader.Buffers.ShaderBufferData;
-	var lastFragmentTextures:haxe.ds.Vector<h3d.mat.Texture>;
-	var lastFragmentBuffers:haxe.ds.Vector<Buffer>;
-
 	override public function draw( ibuf : IndexBuffer, startIndex : Int, ntriangles : Int ) {
 	
-		g.setIndexBuffer(ibuf);
+		/*
+		if(ibuf.count() != (ntriangles*3)){
+
+			// A 'trick' to create indices for a non-indexed vertex data
+			var indices:Array<Int> = [];
+			for (i in 0...Std.int(ntriangles*3)) {
+				indices.push(i);
+			}
+
+			// Create index buffer
+			var indexBuffer:kha.graphics4.IndexBuffer = new kha.graphics4.IndexBuffer(
+				indices.length, // Number of indices for our cube
+				Usage.StaticUsage // Index data will stay the same
+			);
+			
+			// Copy indices to index buffer
+			var iData = indexBuffer.lock();
+			for (i in 0...iData.length) {
+				iData[i] = indices[i];
+			}
+			indexBuffer.unlock();			
+			//trace(indexBuffer.count() + "--- " + ntriangles*3);
+			g.setIndexBuffer(indexBuffer);
+		}
+		else
+		{
+			*/
+			g.setIndexBuffer(ibuf);
+			/*
+		}
+		*/
+
 		selectPipeline();		
 
 		if ( lastVertexGlobals != null ) {
@@ -780,11 +777,7 @@ class KhaDriver extends h3d.impl.Driver {
 			lastFragmentTextures = null;
 		}
 
-		g.drawIndexedVertices(startIndex, Std.int(ntriangles * 3));
-		//var type = SystemImpl.elementIndexUint == null ? GL.UNSIGNED_SHORT : GL.UNSIGNED_INT;
-		//var size = type == GL.UNSIGNED_SHORT ? 2 : 4;
-		//var start = 0;
-		//SystemImpl.gl.drawElements(GL.TRIANGLES, ntriangles * 3, type, start * size);		
+		g.drawIndexedVertices(startIndex, Std.int(ntriangles * 3));	
 	}
 
 	override public function drawInstanced( ibuf : IndexBuffer, commands : h3d.impl.InstanceBuffer ) {
@@ -817,8 +810,11 @@ class KhaDriver extends h3d.impl.Driver {
 	}
 
 	override public function allocDepthBuffer( b : h3d.mat.DepthBuffer ) : DepthBuffer {
-		trace("allocDepthBuffer");
-		return null;
+		if( b.format == null )
+			@:privateAccess b.format = #if js (glES >= 3 ? Depth24Stencil8 : Depth16) #else Depth24Stencil8 #end;
+
+		var khaImg = cast(kha.Image.createRenderTarget(b.width, b.height, null, DepthStencilFormat.Depth24Stencil8, 1, 0), kha.WebGLImage);
+		return { r :cast khaImg #if multidriver, driver : this #end };
 	}
 
 	override public function disposeDepthBuffer( b : h3d.mat.DepthBuffer ) {
@@ -850,14 +846,18 @@ class KhaDriver extends h3d.impl.Driver {
 		if( outOfMemoryCheck ) SystemImpl.gl.getError(); // make sure to reset error flag
 	}
 
-	override public function present() {
-		g.end();
+	override public function present() {		
+		throw "present";
 	}
 
 	override public function end() {
+		#if !js
+		g.end();
+		#end
 	}
 
-	override public function setDebug( b : Bool ) {
+	override public function setDebug( d : Bool ) {
+		this.debug = d;
 	}
 
 	override public function allocTexture( t : h3d.mat.Texture ) : Texture {
@@ -891,9 +891,12 @@ class KhaDriver extends h3d.impl.Driver {
 	}
 
 	override public function disposeVertexes( v : VertexBuffer ) {
+		throw "disposeVertexes";
 	}
 
 	override public function disposeInstanceBuffer( b : h3d.impl.InstanceBuffer ) {
+		b.data = null;
+		b.dispose();
 	}
 
 	override public function uploadIndexBuffer( i : IndexBuffer, startIndice : Int, indiceCount : Int, buf : hxd.IndexBuffer, bufPos : Int ) {
@@ -909,34 +912,26 @@ class KhaDriver extends h3d.impl.Driver {
 	}
 
 	override function uploadVertexBuffer( v : VertexBuffer, startVertex : Int, vertexCount : Int, buf : hxd.FloatBuffer, bufPos : Int ) {
-		if( v.vertexBuffer != null ) {
-			var vertices = v.vertexBuffer.lock(startVertex, vertexCount);
-			for( i in 0...vertexCount * v.stride ) {
-				vertices.set(i, buf[bufPos + i]);
-			}
-			v.vertexBuffer.unlock();
-		}
-		else {
-			for( i in 0...vertexCount * v.stride ) {
-				v.data.set(i, buf[bufPos + i]);
-			}
-		}
+		for( i in 0...vertexCount * v.stride ) {
+			v.data.set(i, buf[bufPos + i]);
+		}		
 	}
 
 	override public function uploadVertexBytes( v : VertexBuffer, startVertex : Int, vertexCount : Int, buf : haxe.io.Bytes, bufPos : Int ) {
+		trace(v);
 		throw "uploadVertexBytes";
 	}
 
 	override public function uploadTextureBitmap( t : h3d.mat.Texture, bmp : hxd.BitmapData, mipLevel : Int, side : Int ) {
 		var pixels = bmp.getPixels();
-		uploadTexturePixels(t, bmp.getPixels(), mipLevel, side);
+		uploadTexturePixels(t, pixels, mipLevel, side);
 		pixels.dispose();
 	}
 
 	override public function uploadTexturePixels( t : h3d.mat.Texture, pixels : hxd.Pixels, mipLevel : Int, side : Int ) {
 
-		pixels.convert(t.format);
-		pixels.setFlip(false);
+		//pixels.convert(t.format);
+		//pixels.setFlip(false);
 
 		var data = t.t.lock(mipLevel);	
 		
@@ -986,4 +981,73 @@ class KhaDriver extends h3d.impl.Driver {
 		return 0.;
 	}
 
+	static var CULLFACES = [
+		kha.graphics4.CullMode.None,
+		kha.graphics4.CullMode.CounterClockwise,
+		kha.graphics4.CullMode.Clockwise,
+		kha.graphics4.CullMode.None,
+	];
+
+	static var BLEND = [
+		kha.graphics4.BlendingFactor.BlendOne,
+		kha.graphics4.BlendingFactor.BlendZero,
+		kha.graphics4.BlendingFactor.SourceAlpha,
+		kha.graphics4.BlendingFactor.SourceColor,
+		kha.graphics4.BlendingFactor.DestinationAlpha,
+		kha.graphics4.BlendingFactor.DestinationColor,
+		kha.graphics4.BlendingFactor.InverseSourceAlpha,
+		kha.graphics4.BlendingFactor.InverseSourceColor,
+		kha.graphics4.BlendingFactor.InverseDestinationAlpha,
+		kha.graphics4.BlendingFactor.InverseDestinationColor,
+		kha.graphics4.BlendingFactor.Undefined, // CONSTANT_COLOR
+		kha.graphics4.BlendingFactor.Undefined, // CONSTANT_ALPHA
+		kha.graphics4.BlendingFactor.Undefined, // ONE_MINUS_CONSTANT_COLOR
+		kha.graphics4.BlendingFactor.Undefined, // ONE_MINUS_CONSTANT_ALPHA
+		kha.graphics4.BlendingFactor.Undefined, // SRC_ALPHA_SATURATE
+	];
+
+	static var OP = [
+		kha.graphics4.BlendingOperation.Add,
+		kha.graphics4.BlendingOperation.Subtract,
+		kha.graphics4.BlendingOperation.ReverseSubtract,
+	];
+
+	static var COMPARE = [
+		kha.graphics4.CompareMode.Always,
+		kha.graphics4.CompareMode.Never,
+		kha.graphics4.CompareMode.Equal,
+		kha.graphics4.CompareMode.NotEqual,
+		kha.graphics4.CompareMode.Greater,
+		kha.graphics4.CompareMode.GreaterEqual,
+		kha.graphics4.CompareMode.Less,
+		kha.graphics4.CompareMode.LessEqual,
+	];
+
+	static var STENCIL_OP = [
+		kha.graphics4.StencilAction.Keep,
+		kha.graphics4.StencilAction.Zero,
+		kha.graphics4.StencilAction.Replace,
+		kha.graphics4.StencilAction.Increment,
+		kha.graphics4.StencilAction.IncrementWrap,
+		kha.graphics4.StencilAction.Decrement,
+		kha.graphics4.StencilAction.DecrementWrap,
+		kha.graphics4.StencilAction.Invert,
+	];
+
+	static var TFILTERS = [
+		kha.graphics4.TextureFilter.PointFilter,
+		kha.graphics4.TextureFilter.LinearFilter,
+		kha.graphics4.TextureFilter.AnisotropicFilter
+	];
+
+	static var TMIPS = [
+		kha.graphics4.MipMapFilter.NoMipFilter,
+		kha.graphics4.MipMapFilter.PointMipFilter,
+		kha.graphics4.MipMapFilter.LinearMipFilter,
+	];
+
+	static var TWRAP = [
+		kha.graphics4.TextureAddressing.Clamp,
+		kha.graphics4.TextureAddressing.Repeat,
+	];
 }
