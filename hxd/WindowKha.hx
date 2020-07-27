@@ -1,4 +1,5 @@
 package hxd;
+import kha.input.KeyCode;
 
 enum DisplayMode {
 	Windowed;
@@ -27,7 +28,6 @@ class WindowKha {
 	var curMouseX : Float = 0.;
 	var curMouseY : Float = 0.;
 	var element : js.html.EventTarget;
-	var canvasPos : { var width(default, never) : Float; var height(default, never) : Float; var left(default, never) : Float; var top(default, never) : Float; };
 	var timer : haxe.Timer;
 
 	var curW : Int;
@@ -35,15 +35,21 @@ class WindowKha {
 
 	var focused : Bool;
 
-	/**
-		When enabled, the browser zoom does not affect the canvas.
-		(default : true)
-	**/
 	public var useScreenPixels : Bool = true;
 
-	public function new( ?canvas : js.html.CanvasElement, ?globalEvents ) : Void {		
+	#if kha_html5 
+	var canvas : js.html.CanvasElement;
+	#end
+
+	public function new() : Void {		
 		eventTargets = new List();
 		resizeEvents = new List();
+		
+		#if kha_html5 
+			canvas = kha.SystemImpl.khanvas;
+		#end
+		kha.input.Mouse.get().notify(mouseDownListener, mouseUpListener, mouseMoveListener, mouseWheelListener);	
+		kha.input.Keyboard.get().notify(keyboardDownListener, keyboardUpListener, pressListener);		
 	}	
 
 	public function dispose() {
@@ -91,18 +97,6 @@ class WindowKha {
 	public function resize( width : Int, height : Int ) : Void {
 	}
 
-	@:deprecated("Use the displayMode property instead")
-	public function setFullScreen( v : Bool ) : Void {
-		var doc = js.Browser.document;
-		var elt : Dynamic = doc.documentElement;
-		if( (doc.fullscreenElement == elt) == v )
-			return;
-		if( v )
-			elt.requestFullscreen();
-		else
-			doc.exitFullscreen();
-	}
-
 	public function setCurrent() {
 		inst = this;
 	}
@@ -126,11 +120,11 @@ class WindowKha {
 	}
 
 	function get_mouseX() {
-		return Math.round((curMouseX - canvasPos.left) * getPixelRatio());
+		return Math.round((curMouseX) * getPixelRatio());
 	}
 
 	function get_mouseY() {
-		return Math.round((curMouseY - canvasPos.top) * getPixelRatio());
+		return Math.round((curMouseY) * getPixelRatio());
 	}
 
 	function get_mouseLock() : Bool {
@@ -149,49 +143,49 @@ class WindowKha {
 		return true;
 	}
 
-	function onMouseDown(e:js.html.MouseEvent) {
-		if(e.clientX != curMouseX || e.clientY != curMouseY)
-			onMouseMove(e);
+	function mouseDownListener(button:Int, x:Int, y:Int) {		
+    	if(x != curMouseX || y != curMouseY)
+			mouseMoveListener(x, y, 0, 0);
 		var ev = new Event(EPush, mouseX, mouseY);
-		ev.button = switch( e.button ) {
+		ev.button = switch(button) {
 			case 1: 2;
 			case 2: 1;
 			case x: x;
 		};
 		event(ev);
-	}
+    }
 
-	function onMouseUp(e:js.html.MouseEvent) {
-		if(e.clientX != curMouseX || e.clientY != curMouseY)
-			onMouseMove(e);
-		var ev = new Event(ERelease, mouseX, mouseY);
-		ev.button = switch( e.button ) {
+    function mouseUpListener(button:Int, x:Int, y:Int) {	
+		if(x != curMouseX || y != curMouseY)
+			mouseMoveListener(x, y, 0, 0);
+		var ev = new Event(ERelease, x, y);
+		ev.button = switch(button) {
 			case 1: 2;
 			case 2: 1;
 			case x: x;
 		};
 		event(ev);
-	}
+    }
 
-	function onMouseMove(e:js.html.MouseEvent) {
-		curMouseX = e.clientX;
-		curMouseY = e.clientY;
+    function mouseMoveListener(x:Int, y:Int, movementX:Int, movementY:Int) {
+		curMouseX = x;
+		curMouseY = y;
 		event(new Event(EMove, mouseX, mouseY));
 	}
 
-	function onMouseWheel(e:js.html.WheelEvent) {
-		e.preventDefault();
+	function mouseWheelListener(delta: Int) {
 		var ev = new Event(EWheel, mouseX, mouseY);
-		ev.wheelDelta = e.deltaY / 120; // browser specific?
+		ev.wheelDelta = delta;
 		event(ev);
 	}
 
+	/*
 	function onTouchStart(e:js.html.TouchEvent) {
 		e.preventDefault();
 		var x, y, ev;
 		for (touch in e.changedTouches) {
-			x = Math.round((touch.clientX - canvasPos.left) * getPixelRatio());
-			y = Math.round((touch.clientY - canvasPos.top) * getPixelRatio());
+			x = Math.round((touch.clientX) * getPixelRatio());
+			y = Math.round((touch.clientY) * getPixelRatio());
 			ev = new Event(EPush, x, y);
 			ev.touchId = touch.identifier;
 			event(ev);
@@ -202,8 +196,8 @@ class WindowKha {
 		e.preventDefault();
 		var x, y, ev;
 		for (touch in e.changedTouches) {
-			x = Math.round((touch.clientX - canvasPos.left) * getPixelRatio());
-			y = Math.round((touch.clientY - canvasPos.top) * getPixelRatio());
+			x = Math.round((touch.clientX) * getPixelRatio());
+			y = Math.round((touch.clientY) * getPixelRatio());
 			ev = new Event(EMove, x, y);
 			ev.touchId = touch.identifier;
 			event(ev);
@@ -214,14 +208,35 @@ class WindowKha {
 		e.preventDefault();
 		var x, y, ev;
 		for (touch in e.changedTouches) {
-			x = Math.round((touch.clientX - canvasPos.left) * getPixelRatio());
-			y = Math.round((touch.clientY - canvasPos.top) * getPixelRatio());
+			x = Math.round((touch.clientX) * getPixelRatio());
+			y = Math.round((touch.clientY) * getPixelRatio());
 			ev = new Event(ERelease, x, y);
 			ev.touchId = touch.identifier;
 			event(ev);
 		}
 	}
+	*/
+	function keyboardDownListener(code: KeyCode) {	
+		//trace(code);
+		var ev = new Event(EKeyDown, mouseX, mouseY);
+		ev.keyCode = code;
+		event(ev);
+	}
 
+	function keyboardUpListener(code: KeyCode) {	
+		var ev = new Event(EKeyUp, mouseX, mouseY);
+		ev.keyCode = code;
+		event(ev);
+	}
+
+	function pressListener(char: String) {	
+		//trace(char);
+		//var ev = new Event(ETextInput, mouseX, mouseY);
+		//ev.charCode = char;
+		//event(ev);
+	}
+
+/*
 	function onKeyUp(e:js.html.KeyboardEvent) {
 		var ev = new Event(EKeyUp, mouseX, mouseY);
 		ev.keyCode = e.keyCode;
@@ -260,7 +275,8 @@ class WindowKha {
 			e.preventDefault();
 			e.stopPropagation();
 		}
-	}
+	}	
+*/
 
 	function onFocus(b: Bool) {
 		event(new Event(b ? EFocus : EFocusLost));

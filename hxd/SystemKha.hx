@@ -92,7 +92,29 @@ class SystemKha {
 	}
 
 	public static function setNativeCursor( c : Cursor ) : Void {
-		throw 'setNativeCursor';
+
+		#if !kha_html5 
+			throw 'setNativeCursor';
+
+		#else	
+		if( currentNativeCursor != null && c.equals(currentNativeCursor) )
+			return;
+		
+		currentNativeCursor = c;
+		currentCustomCursor = null;
+		var canvas = @:privateAccess hxd.Window.getInstance().canvas;
+		if( canvas != null ) {
+			canvas.style.cursor = switch( c ) {
+			case Default: "default";
+			case Button: "pointer";
+			case Move: "move";
+			case TextInput: "text";
+			case Hide: "none";
+			case Callback(_): throw "assert";
+			case Custom(cur):"";
+			};
+		}
+		#end	
 	}
 
 	public static function getDeviceName() : String {

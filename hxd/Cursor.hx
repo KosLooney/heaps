@@ -30,8 +30,10 @@ class CustomCursor {
 	static var UID = 0;
 	var name : String;
 	var alloc : flash.ui.MouseCursorData;
-	#elseif js
+	#elseif kha
 	var alloc : Array<String>;
+	#elseif js
+	var alloc : Array<String>;	
 	#else
 	var alloc : Dynamic;
 	#end
